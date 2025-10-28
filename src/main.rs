@@ -1,4 +1,4 @@
-use macroquad::{prelude::*, rand::gen_range};
+use macroquad::{prelude::{scene::camera_pos, *}, rand::gen_range, };
 
 //use std::collections::HashMap;
 use rustc_hash::FxHashMap as HashMap; //schnellere Hashmap
@@ -98,15 +98,43 @@ impl Particle {
 
         }
     }
-    fn draw(&self) {
+    fn draw(&mut self, sun_positon: Vec3, camera_pos: Vec3) {
         let velocity = self.pos - self.old_pos;
         let speed_squared = velocity.length_squared();  // ← Nur x² + y²
 
-        let color = speed_to_color(speed_squared);
+        let mut color = speed_to_color(speed_squared);
+
+        // Lichteffekt von der Sonnenentferung / Distanzbeleuchtung
+        let falloff = 0.008;
+
+        let delta = self.pos - sun_positon;
+        let dist = delta.length();
+
+        let mut intensity: f32 = 1.0 / (1.0 + dist * falloff);
+
+        // Rim Lighting
+        let to_light = (sun_positon - self.pos).normalize(); // Wo ist das licht aus der Sicht des Partikels?
+        let to_camera = (camera_pos - self.pos).normalize(); // Wo ist die Kamera aus der Sicht des Partikels?
+
+        let dot = to_light.dot(to_camera); // Winkel zwischen Licht und Kamera
+
+        let rim = (1.0 - dot.abs()).powf(2.0);
+
+        let rim_boost = 1.0 + rim * 2.; // Heller am Rand
+
+        intensity *= rim_boost;
+
+        // Intensität mit der Farbe multiplizieren
+        color.r *= intensity;
+        color.g *= intensity;
+        color.b *= intensity;
+        // color.a *= intensity;
+
 
         draw_sphere(
             self.pos, self.radius, None, color
         );
+        // draw_sphere_wires(self.pos, self.radius, None, RED);
     }
     fn calm(&mut self) {
         self.old_pos = self.pos;
@@ -210,20 +238,20 @@ fn resolve_collision_with_grid(particles: &mut Vec<Particle>, grid: &HashMap<(i3
     }
 }
 // passt so
-fn update_particles(particles: &mut Vec<Particle>, dt: f32, bool_gravity: bool) {
+fn update_particles(particles: &mut Vec<Particle>, dt: f32, bool_gravity: bool, box_size: f32) {
     for particle in particles {
         particle.update(dt, bool_gravity);
-        particle.box_constrains(100.0);
+        particle.box_constrains(box_size);
     }
 }
 
-fn draw_particles(particles: &Vec<Particle>) {
+fn draw_particles(particles: &mut Vec<Particle>, sun_position: Vec3, camera_pos: Vec3) {
     for particle in particles {
-        particle.draw()
+        particle.draw(sun_position, camera_pos)
     }
 }
 fn speed_to_color(speed: f32) -> Color {
-    let normalized = (speed / 25.0).min(1.0);
+    let normalized = (speed / 1.0).min(1.0);
     let r = normalized.powf(1.5);
     let g = (1.0 - normalized).powf(2.0);
     Color::new(r, g, 1.0 - r, 1.0)
@@ -258,7 +286,7 @@ fn camera_movement(
     }
     *camera_distance = camera_distance.clamp(20.0, 300.0);
     
-    let target = vec3(0., 10., 0.);
+    let target = vec3(50., 50., 50.);
     camera.position = vec3(
         target.x + *camera_distance * camera_angle_v.cos() * camera_angle_h.sin(),
         target.y + *camera_distance * camera_angle_v.sin(),
@@ -287,6 +315,8 @@ async fn main() {
     let mut bool_gravity = true;
 
     let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::default();
+
+    let mut sun_position = vec3(60., 100., -100.);
 
     let mut camera: Camera3D = Camera3D {
         position: vec3(0., 20., 80.),
@@ -318,12 +348,20 @@ async fn main() {
         camera_movement(&mut camera_angle_h, &mut camera_angle_v, &mut camera_distance, &mut camera);
 
         set_camera(&camera);
-        let box_size: f32 = 100.;
+        let box_size: f32 = 200.;
         draw_cube_wires(
             vec3(box_size/2., box_size/2., box_size/2.),
             vec3(box_size, box_size, box_size),
             WHITE
         );
+        // Light
+        if is_key_down(KeyCode::E) {
+            sun_position.z += 1.; 
+        }
+        if is_key_down(KeyCode::D) {
+            sun_position.z -= 1.; 
+        }
+        draw_sphere(sun_position, 10., None,WHITE); // Sonne
         // Physik
         if is_key_pressed(KeyCode::Key1) {
             for _i in 0..10 {
@@ -333,17 +371,17 @@ async fn main() {
         let substeps = if particles.len() > 20 { 2 } else { 4 }; // mehere Substeps für mehr Stabilität. Weniger Substeps für bessere performance bei hoher Partikelanzahl.
         let sub_dt = FIXED_DT / substeps as f32;
         for _ in 0..substeps {
-            update_particles(&mut particles, sub_dt, bool_gravity);
+            update_particles(&mut particles, sub_dt, bool_gravity, box_size);
             
             grid.clear();
-            let cell_size = 14.0;
+            let cell_size = 10.0;
             fill_grid(&mut grid, &particles, cell_size);
             
             resolve_collision_with_grid(&mut particles, &grid);
         }
         // resolve_collision(&mut particles);
         
-        draw_particles(&particles);
+        draw_particles(&mut particles, sun_position, camera.position);
         
         set_default_camera();
         // HUD
