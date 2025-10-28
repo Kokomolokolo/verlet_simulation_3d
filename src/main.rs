@@ -78,9 +78,14 @@ impl Particle {
     fn resolve_collision(&mut self, other: &mut Particle) { // muss neu
         let delta = self.pos - other.pos; // Wie weit sind die beiden auseinander?
 
+        let min_dist = self.radius + other.radius;
+        // Wenn zu weit entfernt: Direkt raus.
+        if delta.x.abs() > min_dist { return; }
+        if delta.y.abs() > min_dist { return; }
+        if delta.z.abs() > min_dist { return; }
+
         let dist_squared = delta.length_squared(); // errechnet die Länge des Vektors
 
-        let min_dist = self.radius + other.radius;
         let min_dist_squared = min_dist * min_dist;
 
         if dist_squared - min_dist_squared < 0.0 && dist_squared > 0.0 {
@@ -129,6 +134,8 @@ impl Particle {
         color.g *= intensity;
         color.b *= intensity;
         // color.a *= intensity;
+        // color = Color::new(rim, rim, rim, 1.0);
+
 
 
         draw_sphere(
@@ -153,7 +160,7 @@ fn resolve_collision(particles: &mut Vec<Particle>) {
 
 fn fill_grid<'a>(hashie: &'a mut HashMap<(i32, i32, i32), Vec<usize>>, particles: &Vec<Particle>, cell_size: f32) -> &'a mut HashMap<(i32, i32, i32), Vec<usize>> {
     //let mut hashie: HashMap<(i32, i32), Vec<usize>> = HashMap::default();
-    hashie.reserve(particles.len() / 4);
+    hashie.reserve(particles.len() / 2);
     for (index, particle) in particles.iter().enumerate() {
         let cell_x = (particle.pos.x / cell_size) as i32;
         let cell_y = (particle.pos.y / cell_size) as i32;
@@ -260,7 +267,8 @@ fn camera_movement(
     camera_angle_h: &mut f32,      // ← &mut = mutable Referenz
     camera_angle_v: &mut f32, 
     camera_distance: &mut f32, 
-    camera: &mut Camera3D           // ← auch &mut!
+    camera: &mut Camera3D,
+    box_size: f32,           // ← auch &mut!
 ) {
     // Jetzt mit * dereferenzieren:
     if is_key_down(KeyCode::Left) {
@@ -285,8 +293,8 @@ fn camera_movement(
         *camera_distance += 1.0;
     }
     *camera_distance = camera_distance.clamp(20.0, 300.0);
-    
-    let target = vec3(50., 50., 50.);
+    let half_box_size = box_size / 2.;
+    let target = vec3(half_box_size, half_box_size, half_box_size);
     camera.position = vec3(
         target.x + *camera_distance * camera_angle_v.cos() * camera_angle_h.sin(),
         target.y + *camera_distance * camera_angle_v.sin(),
@@ -344,11 +352,11 @@ async fn main() {
                 bool_gravity = true;
             }
         }
+        let box_size: f32 = 200.;
         // Kamera
-        camera_movement(&mut camera_angle_h, &mut camera_angle_v, &mut camera_distance, &mut camera);
+        camera_movement(&mut camera_angle_h, &mut camera_angle_v, &mut camera_distance, &mut camera, box_size);
 
         set_camera(&camera);
-        let box_size: f32 = 200.;
         draw_cube_wires(
             vec3(box_size/2., box_size/2., box_size/2.),
             vec3(box_size, box_size, box_size),
@@ -364,17 +372,19 @@ async fn main() {
         draw_sphere(sun_position, 10., None,WHITE); // Sonne
         // Physik
         if is_key_pressed(KeyCode::Key1) {
-            for _i in 0..10 {
+            for _i in 0..100 {
                 particles.push(spawn_particle(box_size))
             }
         }
-        let substeps = if particles.len() > 20 { 2 } else { 4 }; // mehere Substeps für mehr Stabilität. Weniger Substeps für bessere performance bei hoher Partikelanzahl.
+        let substeps = if particles.len() > 500 { 1 } 
+                            else if particles.len() > 100 { 2 }
+                            else { 4 }; // mehere Substeps für mehr Stabilität. Weniger Substeps für bessere performance bei hoher Partikelanzahl.
         let sub_dt = FIXED_DT / substeps as f32;
         for _ in 0..substeps {
             update_particles(&mut particles, sub_dt, bool_gravity, box_size);
             
             grid.clear();
-            let cell_size = 10.0;
+            let cell_size = 15.0;
             fill_grid(&mut grid, &particles, cell_size);
             
             resolve_collision_with_grid(&mut particles, &grid);
