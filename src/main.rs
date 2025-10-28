@@ -352,7 +352,7 @@ async fn main() {
                 bool_gravity = true;
             }
         }
-        let box_size: f32 = 200.;
+        let box_size: f32 = 100.;
         // Kamera
         camera_movement(&mut camera_angle_h, &mut camera_angle_v, &mut camera_distance, &mut camera, box_size);
 
@@ -371,7 +371,7 @@ async fn main() {
         }
         draw_sphere(sun_position, 10., None,WHITE); // Sonne
         // Physik
-        if is_key_pressed(KeyCode::Key1) {
+        if is_key_pressed(KeyCode::Key1) ||  is_mouse_button_pressed(MouseButton::Left) {
             for _i in 0..100 {
                 particles.push(spawn_particle(box_size))
             }
